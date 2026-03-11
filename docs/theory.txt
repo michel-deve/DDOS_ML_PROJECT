@@ -1,0 +1,17 @@
+Problem Statement (2–3 lines)
+
+“Distributed Denial of Service (DDoS) attacks overwhelm network resources, causing service disruption. Traditional rule-based detection systems fail to detect new attack patterns. Hence, an ML-based detection system is required.”
+
+STEP 5: Decide your technology stack
+
+Write this clearly:
+
+Language: Python
+
+ML Algorithm: Random Forest
+
+Backend: Flask
+
+Dataset: CICIDS 2017
+
+Blocking: IP-based logical blocklist

@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+*.log
+blocked_ips.json
+
+# Keep these for a "ready-to-run" repo
+# dataset/ddos.csv
+# model/*.pkl
+
+# Ignore static reports if they are regenerated
+static/confusion_matrix.png
+static/feature_importance.png
+static/classification_report.txt

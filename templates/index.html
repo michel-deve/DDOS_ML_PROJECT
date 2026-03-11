@@ -1,0 +1,166 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+    <h1 class="h2">Traffic Dashboard</h1>
+    <div class="btn-toolbar mb-2 mb-md-0">
+        <div class="btn-group me-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="fetchStats()">Refresh Data</button>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Stats Cards -->
+    <div class="col-md-6 col-lg-4">
+        <div class="card bg-primary text-white">
+            <div class="card-body">
+                <h5 class="card-title">System Status</h5>
+                <p class="card-text fs-4" id="system-status">Active</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg-4">
+        <div class="card bg-danger text-white">
+            <div class="card-body">
+                <h5 class="card-title">Blocked IPs</h5>
+                <p class="card-text fs-4" id="blocked-count">{{ blocked_ips|length }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<hr class="my-4">
+
+<div class="row">
+    <!-- Simulation Form -->
+    <div class="col-lg-6">
+        <h3>Simulate Traffic</h3>
+        <div class="card p-3">
+            <form id="simulation-form">
+                <div class="mb-3">
+                    <label for="source_ip" class="form-label">Source IP</label>
+                    <input type="text" class="form-control" id="source_ip" placeholder="192.168.1.50"
+                        value="192.168.1.50">
+                </div>
+                <!-- Important Features for Model -->
+                <div class="row">
+                    <div class="col-6 mb-3">
+                        <label for="flow_packets_s" class="form-label">Flow Packets/s</label>
+                        <input type="number" class="form-control" id="flow_packets_s" value="10">
+                    </div>
+                    <div class="col-6 mb-3">
+                        <label for="flow_bytes_s" class="form-label">Flow Bytes/s</label>
+                        <input type="number" class="form-control" id="flow_bytes_s" value="100">
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Traffic Intensity Preset</label>
+                    <div class="btn-group w-100" role="group">
+                        <button type="button" class="btn btn-outline-success" onclick="setPreset('normal')">Normal
+                            Traffic</button>
+                        <button type="button" class="btn btn-outline-danger" onclick="setPreset('attack')">DDoS
+                            Attack</button>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-dark w-100">Analyze Traffic</button>
+            </form>
+            <div id="result-alert" class="alert mt-3 d-none" role="alert"></div>
+        </div>
+    </div>
+
+    <!-- Blocked IPs List -->
+    <div class="col-lg-6">
+        <h3>Blocked IP Registry</h3>
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>IP Address</th>
+                        <th>Reason</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="blocked-table-body">
+                    {% for ip, details in blocked_ips.items() %}
+                    <tr id="row-{{ ip.replace('.', '-') }}">
+                        <td>{{ ip }}</td>
+                        <td>{{ details.reason }}</td>
+                        <td><span class="badge bg-danger">{{ details.status }}</span></td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-success"
+                                onclick="unblockIP('{{ ip }}')">Unblock</button>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr id="no-blocked-msg">
+                        <td colspan="4" class="text-center text-muted">No IPs currently blocked.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    function setPreset(type) {
+        if (type === 'normal') {
+            document.getElementById('flow_packets_s').value = 50;
+            document.getElementById('flow_bytes_s').value = 5000;
+        } else {
+            document.getElementById('flow_packets_s').value = 50000;
+            document.getElementById('flow_bytes_s').value = 100000000;
+        }
+    }
+
+    document.getElementById('simulation-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const data = {
+            source_ip: document.getElementById('source_ip').value,
+            flow_packets_s: document.getElementById('flow_packets_s').value,
+            flow_bytes_s: document.getElementById('flow_bytes_s').value,
+            // Add other simulated fields as 0 or logic defaults
+        };
+
+        const response = await fetch('/predict', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+
+        const result = await response.json();
+
+        const alertBox = document.getElementById('result-alert');
+        alertBox.classList.remove('d-none', 'alert-success', 'alert-danger');
+
+        if (result.prediction === 'DDoS Attack') {
+            alertBox.classList.add('alert-danger');
+            alertBox.textContent = `🚨 DDoS ATTACK DETECTED! IP ${result.source_ip} BLOCKED.`;
+            setTimeout(() => location.reload(), 1500); // Reload to update table
+        } else {
+            alertBox.classList.add('alert-success');
+            alertBox.textContent = "✅ Traffic is Normal.";
+        }
+    });
+
+    async function unblockIP(ip) {
+        if (!confirm(`Unblock IP ${ip}?`)) return;
+
+        const response = await fetch('/unblock', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ip: ip })
+        });
+
+        const result = await response.json();
+        if (result.success) {
+            location.reload();
+        } else {
+            alert("Error unblocking IP");
+        }
+    }
+</script>
+{% endblock %}
