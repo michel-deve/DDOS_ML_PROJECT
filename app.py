@@ -88,6 +88,12 @@ def unblock():
             return jsonify({'success': True, 'message': f'IP {ip} unblocked'})
     return jsonify({'success': False, 'message': 'IP not found or error'})
 
+@app.route('/unblock_all', methods=['POST'])
+def unblock_all():
+    if blocker.clear_all():
+        return jsonify({'success': True, 'message': 'All IPs unblocked'})
+    return jsonify({'success': False, 'message': 'Error clearing block list'})
+
 @app.route('/api/stats')
 def stats():
     # Simple mock stats for the dashboard

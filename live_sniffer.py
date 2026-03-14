@@ -45,15 +45,15 @@ def process_packet(packet):
             
         packet_counts[src_ip] += 1
         
-        # Check every 1.5 seconds
+        # Check every 1.0 second (faster feedback)
         current_time = time.time()
-        if current_time - start_time >= 1.5:
+        if current_time - start_time >= 1.0:
             # Sort IPs by packet count
             sorted_ips = sorted(packet_counts.items(), key=lambda x: x[1], reverse=True)
             
             for ip, count in sorted_ips:
-                # threshold: if > 2 packets in 1.5s (very sensitive for demo)
-                if count >= 3: 
+                # threshold: if > 1 packet in 1.0s (extremely sensitive for demo volume)
+                if count >= 2: 
                     print(f"\n[!] {Colors.WARNING}ALERT: {ip} sent {count} packets.{Colors.ENDC}")
                     
                     # Force "Distributed Attack" detection pattern
@@ -80,12 +80,26 @@ def process_packet(packet):
             packet_counts.clear()
             start_time = current_time
 
-print(f"\n🚀 {Colors.OKGREEN}DISTRIBUTED DDOS MONITOR ACTIVE.{Colors.ENDC}")
+# Interface Selection for Sniffer
+def get_sniffer_interface():
+    interfaces = get_if_list()
+    print("\n--- Sniffer Configuration ---")
+    for i, iface in enumerate(interfaces):
+        print(f"  {i}. {iface}")
+    try:
+        idx = input(f"\nSelect interface to monitor (0-{len(interfaces)-1}, default 0): ").strip()
+        return interfaces[int(idx)] if idx else interfaces[0]
+    except:
+        return interfaces[0]
+
+SNIFF_IFACE = get_sniffer_interface()
+
+print(f"\n🚀 {Colors.OKGREEN}DISTRIBUTED DDOS MONITOR ACTIVE on {SNIFF_IFACE}.{Colors.ENDC}")
 print(f"Monitoring network for multi-source attacks...")
 print("Press Ctrl+C to stop.")
 
 try:
-    sniff(prn=process_packet, store=0)
+    sniff(iface=SNIFF_IFACE, prn=process_packet, store=0)
 except KeyboardInterrupt:
     print(f"\n{Colors.WARNING}Sniffer stopped.{Colors.ENDC}")
     sys.exit(0)

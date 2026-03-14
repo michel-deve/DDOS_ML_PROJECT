@@ -42,6 +42,12 @@ class IPBlocker:
             return True
         return False
 
+    def clear_all(self):
+        self.blocked_ips = {}
+        self._save_blocked_ips()
+        print("✅ [SIMULATION] All IPs have been unblocked/reset.")
+        return True
+
     def get_blocked_ips(self):
         self.blocked_ips = self._load_blocked_ips() # Reload latest state
         return self.blocked_ips

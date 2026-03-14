@@ -71,7 +71,10 @@
 
     <!-- Blocked IPs List -->
     <div class="col-lg-6">
-        <h3>Blocked IP Registry</h3>
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h3>Blocked IP Registry</h3>
+            <button class="btn btn-sm btn-outline-danger" onclick="resetAllIPs()">Reset All</button>
+        </div>
         <div class="table-responsive">
             <table class="table table-striped table-hover">
                 <thead>
@@ -160,6 +163,22 @@
             location.reload();
         } else {
             alert("Error unblocking IP");
+        }
+    }
+
+    async function resetAllIPs() {
+        if (!confirm("Are you sure you want to unblock ALL IPs?")) return;
+
+        const response = await fetch('/unblock_all', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const result = await response.json();
+        if (result.success) {
+            location.reload();
+        } else {
+            alert("Error resetting IP list");
         }
     }
 </script>
