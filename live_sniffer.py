@@ -6,6 +6,7 @@ from ip_blocker import IPBlocker
 import time
 from collections import Counter
 import sys
+import json
 
 # Colors for better logging
 class Colors:
@@ -33,9 +34,52 @@ start_time = time.time()
 LOCAL_IP = socket.gethostbyname(socket.gethostname())
 TARGET_IP = LOCAL_IP # Defined for clarity and to prevent NameError
 
-def process_packet(packet):
+import threading
+
+def monitor_status():
     global start_time
-    
+    while True:
+        time.sleep(1.0)
+        # Update Vulnerable Site Status File
+        total_rate = sum(packet_counts.values())
+        try:
+            with open('attack_status.txt', 'w') as f:
+                json.dump({"rate": total_rate}, f)
+        except Exception:
+            pass
+
+        # Sort IPs by packet count
+        sorted_ips = sorted(packet_counts.items(), key=lambda x: x[1], reverse=True)
+        
+        for ip, count in sorted_ips:
+            # threshold: if > 1 packet in 1.0s (extremely sensitive for demo volume)
+            if count >= 2: 
+                print(f"\n[!] {Colors.WARNING}ALERT: {ip} sent {count} packets.{Colors.ENDC}")
+                
+                # Force "Distributed Attack" detection pattern
+                input_data = {feature: 0 for feature in feature_names}
+                input_data['Destination Port'] = 80
+                input_data['Flow Duration'] = 1000000 
+                input_data['Flow Packets/s'] = 500000
+                input_data['Flow Bytes/s'] = 100000000
+                input_data['Total Fwd Packets'] = count * 2
+                
+                df = pd.DataFrame([input_data])[feature_names]
+                prediction = int(model.predict(df)[0])
+                
+                # For DEMO: If traffic is high or model flags it, we BLOCK.
+                # This ensures the dashboard fills up quickly.
+                if prediction == 1 or count > 5:
+                    print(f"🚨 {Colors.FAIL}DDOS DETECTED: Source {ip}{Colors.ENDC}")
+                    if blocker.block_ip(ip, "ML-Based Distributed Attack Detection"):
+                        print(f"   ✅ {Colors.OKGREEN}ACTION: Blocked IP {ip} in real-time registry.{Colors.ENDC}")
+                else:
+                    print(f"✅ VERIFIED: {ip} activity is normal.")
+        
+        # Reset
+        packet_counts.clear()
+
+def process_packet(packet):
     if packet.haslayer(IP):
         src_ip = packet[IP].src
         
@@ -44,41 +88,7 @@ def process_packet(packet):
             return
             
         packet_counts[src_ip] += 1
-        
-        # Check every 1.0 second (faster feedback)
-        current_time = time.time()
-        if current_time - start_time >= 1.0:
-            # Sort IPs by packet count
-            sorted_ips = sorted(packet_counts.items(), key=lambda x: x[1], reverse=True)
-            
-            for ip, count in sorted_ips:
-                # threshold: if > 1 packet in 1.0s (extremely sensitive for demo volume)
-                if count >= 2: 
-                    print(f"\n[!] {Colors.WARNING}ALERT: {ip} sent {count} packets.{Colors.ENDC}")
-                    
-                    # Force "Distributed Attack" detection pattern
-                    input_data = {feature: 0 for feature in feature_names}
-                    input_data['Destination Port'] = 80
-                    input_data['Flow Duration'] = 1000000 
-                    input_data['Flow Packets/s'] = 500000
-                    input_data['Flow Bytes/s'] = 100000000
-                    input_data['Total Fwd Packets'] = count * 2
-                    
-                    df = pd.DataFrame([input_data])[feature_names]
-                    prediction = int(model.predict(df)[0])
-                    
-                    # For DEMO: If traffic is high or model flags it, we BLOCK.
-                    # This ensures the dashboard fills up quickly.
-                    if prediction == 1 or count > 5:
-                        print(f"🚨 {Colors.FAIL}DDOS DETECTED: Source {ip}{Colors.ENDC}")
-                        if blocker.block_ip(ip, "ML-Based Distributed Attack Detection"):
-                            print(f"   ✅ {Colors.OKGREEN}ACTION: Blocked IP {ip} in real-time registry.{Colors.ENDC}")
-                    else:
-                        print(f"✅ VERIFIED: {ip} activity is normal.")
-            
-            # Reset
-            packet_counts.clear()
-            start_time = current_time
+
 
 # Interface Selection for Sniffer
 def get_sniffer_interface():
@@ -99,6 +109,8 @@ print(f"Monitoring network for multi-source attacks...")
 print("Press Ctrl+C to stop.")
 
 try:
+    monitor = threading.Thread(target=monitor_status, daemon=True)
+    monitor.start()
     sniff(iface=SNIFF_IFACE, prn=process_packet, store=0)
 except KeyboardInterrupt:
     print(f"\n{Colors.WARNING}Sniffer stopped.{Colors.ENDC}")

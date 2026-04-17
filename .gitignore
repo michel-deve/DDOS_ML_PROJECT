@@ -5,6 +5,8 @@ venv/
 .env
 *.log
 blocked_ips.json
+attack_status.txt
+
 
 # Keep these for a "ready-to-run" repo
 # dataset/ddos.csv

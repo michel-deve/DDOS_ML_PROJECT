@@ -10,9 +10,9 @@ app = Flask(__name__)
 try:
     model = joblib.load("model/ddos_rf_model.pkl")
     feature_names = joblib.load("model/feature_names.pkl")
-    print("✅ Model and Feature Names Loaded Successfully")
+    print("[SUCCESS] Model and Feature Names Loaded Successfully")
 except Exception as e:
-    print(f"❌ Error loading model: {e}")
+    print(f"[ERROR] Error loading model: {e}")
     model = None
     feature_names = []
 
